@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -12,6 +11,7 @@ import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
+from rich.prompt import IntPrompt, Prompt
 from rich.table import Table
 
 from . import __version__
@@ -29,31 +29,20 @@ app = typer.Typer(
 
 console = Console()
 
-# Type aliases for CLI options
-OutputPath = Annotated[
-    Optional[Path],
-    typer.Option("--output", "-o", help="Output directory or file path"),
-]
-Depth = Annotated[
-    int,
-    typer.Option("--depth", "-d", help="Maximum crawl depth", min=1, max=10),
-]
-Model = Annotated[
-    Optional[str],
-    typer.Option("--model", "-m", help="OpenAI model to use"),
-]
-Pairs = Annotated[
-    Optional[int],
-    typer.Option("--pairs", "-p", help="Number of Q&A pairs to generate"),
-]
-Verbose = Annotated[
-    bool,
-    typer.Option("--verbose", "-v", help="Enable verbose output"),
-]
-Quiet = Annotated[
-    bool,
-    typer.Option("--quiet", "-q", help="Minimal output"),
-]
+LOGO = """[bold cyan]
+ ██████╗  ██████╗  ██████╗███████╗███████╗████████╗
+ ██╔══██╗██╔═══██╗██╔════╝██╔════╝██╔════╝╚══██╔══╝
+ ██║  ██║██║   ██║██║     ███████╗█████╗     ██║
+ ██║  ██║██║   ██║██║     ╚════██║██╔══╝     ██║
+ ██████╔╝╚██████╔╝╚██████╗███████║███████╗   ██║
+ ╚═════╝  ╚═════╝  ╚═════╝╚══════╝╚══════╝   ╚═╝
+  ██████╗ ███████╗███╗   ██╗
+ ██╔════╝ ██╔════╝████╗  ██║
+ ██║  ███╗█████╗  ██╔██╗ ██║
+ ██║   ██║██╔══╝  ██║╚██╗██║
+ ╚██████╔╝███████╗██║ ╚████║
+  ╚═════╝ ╚══════╝╚═╝  ╚═══╝
+[/bold cyan]                        [dim]by t21.dev[/dim]"""
 
 
 def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
@@ -65,7 +54,6 @@ def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
     else:
         level = logging.INFO
 
-    # Override with environment variable if set
     env_level = os.getenv("LOG_LEVEL")
     if env_level:
         level = getattr(logging, env_level.upper(), level)
@@ -85,24 +73,149 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option("--version", callback=version_callback, is_eager=True),
     ] = False,
 ) -> None:
     """DocSet Gen - Transform documentation into LLM training datasets."""
-    pass
+    # If no command provided, run interactive mode
+    if ctx.invoked_subcommand is None:
+        run_interactive()
+
+
+def run_interactive() -> None:
+    """Run the interactive pipeline."""
+    setup_logging()
+
+    console.print(LOGO)
+    console.print("[dim]Transform documentation into LLM training datasets[/dim]\n")
+
+    # Load configuration
+    config = Config.load()
+
+    # Check API keys
+    missing_keys = config.validate_api_keys()
+    if missing_keys:
+        console.print(f"[red]Error:[/red] Missing API keys: {', '.join(missing_keys)}")
+        console.print("\nSet them in your .env file:")
+        console.print("  FIRECRAWL_API_KEY=fc-your-key")
+        console.print("  OPENAI_API_KEY=sk-your-key")
+        raise typer.Exit(1)
+
+    # Step 1: Get URL
+    console.print()
+    url = Prompt.ask("[cyan]Enter documentation URL[/cyan]")
+
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    # Step 2: Get crawl depth
+    depth = IntPrompt.ask(
+        "[cyan]Crawl depth[/cyan]",
+        default=3,
+        show_default=True,
+    )
+
+    # Step 3: Scrape
+    console.print()
+    console.print(Panel("[bold blue]Step 1/3: Scraping Documentation[/bold blue]"))
+
+    scraper = Scraper(config)
+
+    try:
+        with console.status(f"[bold]Crawling {url}...[/bold]"):
+            scrape_result = scraper.scrape(url, depth=depth)
+
+        if not scrape_result.pages:
+            console.print("[red]Error:[/red] No pages were scraped.")
+            raise typer.Exit(1)
+
+        # Show what we found
+        total_words = sum(p.word_count() for p in scrape_result.pages)
+        console.print(f"\n[green]Found {len(scrape_result.pages)} pages[/green] ({total_words:,} words total)")
+
+        # Step 4: Ask how many pairs
+        console.print()
+        suggested_pairs = min(len(scrape_result.pages) * 5, 500)
+        pairs_count = IntPrompt.ask(
+            "[cyan]How many Q&A pairs to generate?[/cyan]",
+            default=suggested_pairs,
+            show_default=True,
+        )
+
+        # Step 5: Get output path
+        output_path = Prompt.ask(
+            "[cyan]Output file[/cyan]",
+            default="dataset.jsonl",
+            show_default=True,
+        )
+        output_path = Path(output_path)
+
+        # Step 6: Generate
+        console.print()
+        console.print(Panel("[bold blue]Step 2/3: Generating Q&A Pairs[/bold blue]"))
+
+        generator = Generator(config)
+        gen_result = generator.generate(
+            scrape_result.pages,
+            max_pairs=pairs_count,
+        )
+
+        if not gen_result.pairs:
+            console.print("[red]Error:[/red] No Q&A pairs were generated.")
+            raise typer.Exit(1)
+
+        console.print(f"[green]Generated {gen_result.total_generated} Q&A pairs[/green]")
+
+        # Step 7: Clean and save
+        console.print()
+        console.print(Panel("[bold blue]Step 3/3: Cleaning and Saving[/bold blue]"))
+
+        cleaner = Cleaner(config)
+        cleaned = cleaner.clean_and_split(gen_result.pairs)
+
+        if output_path.suffix == ".jsonl":
+            cleaned.save_combined(output_path)
+        else:
+            output_path.mkdir(parents=True, exist_ok=True)
+            cleaned.save(output_path)
+
+        # Final summary
+        console.print()
+        table = Table(title="Dataset Complete")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+        table.add_row("Pages Scraped", str(len(scrape_result.pages)))
+        table.add_row("Q&A Pairs Generated", str(gen_result.total_generated))
+        table.add_row("After Cleaning", str(cleaned.cleaned_count))
+        table.add_row("Train / Val / Test", f"{len(cleaned.train.pairs)} / {len(cleaned.validation.pairs)} / {len(cleaned.test.pairs)}")
+        table.add_row("Output", str(output_path))
+        console.print(table)
+
+        console.print(Panel(
+            f"[green]Dataset saved to {output_path}[/green]\n\n"
+            "Your dataset is ready for fine-tuning!",
+            title="Success",
+        ))
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled by user[/yellow]")
+        raise typer.Exit(0)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
 def init(
-    output: OutputPath = None,
-    verbose: Verbose = False,
+    output: Annotated[Optional[Path], typer.Option("--output", "-o")] = None,
 ) -> None:
     """Initialize configuration file with defaults."""
-    setup_logging(verbose)
+    setup_logging()
 
     config_path = output or Path.cwd() / "docset-gen.yaml"
 
@@ -117,7 +230,7 @@ def init(
         "Next steps:\n"
         "1. Set your API keys in .env file\n"
         "2. Customize the configuration as needed\n"
-        "3. Run: docset-gen scrape <url>",
+        "3. Run: python -m docset_gen",
         title="Configuration Initialized",
     ))
 
@@ -125,44 +238,33 @@ def init(
 @app.command()
 def scrape(
     url: Annotated[str, typer.Argument(help="Documentation URL to scrape")],
-    output: OutputPath = None,
-    depth: Depth = 3,
-    verbose: Verbose = False,
-    quiet: Quiet = False,
+    output: Annotated[Optional[Path], typer.Option("--output", "-o")] = None,
+    depth: Annotated[int, typer.Option("--depth", "-d")] = 3,
 ) -> None:
     """Scrape documentation site to markdown files."""
-    setup_logging(verbose, quiet)
+    setup_logging()
 
     output_dir = output or Path.cwd() / "scraped"
-
-    # Load configuration
     config = Config.load()
 
-    # Check API key
     missing_keys = config.validate_api_keys()
     if "FIRECRAWL_API_KEY" in missing_keys:
         console.print("[red]Error:[/red] FIRECRAWL_API_KEY is not set.")
-        console.print("Set it in your .env file or as an environment variable.")
         raise typer.Exit(1)
 
-    # Create scraper and run
     scraper = Scraper(config)
 
     try:
-        with console.status(f"[bold blue]Scraping {url}...[/bold blue]"):
-            result = scraper.scrape(url, depth=depth, verbose=verbose)
+        with console.status(f"[bold]Scraping {url}...[/bold]"):
+            result = scraper.scrape(url, depth=depth)
 
         result.save(output_dir)
 
-        # Show summary
         table = Table(title="Scraping Complete")
         table.add_column("Metric", style="cyan")
         table.add_column("Value", style="green")
         table.add_row("Pages Scraped", str(len(result.pages)))
-        table.add_row("Total Pages Found", str(result.total_pages))
-        table.add_row("Failed URLs", str(len(result.failed_urls)))
         table.add_row("Output Directory", str(output_dir))
-
         console.print(table)
 
     except Exception as e:
@@ -173,179 +275,57 @@ def scrape(
 @app.command()
 def generate(
     input_path: Annotated[Path, typer.Argument(help="Path to scraped content directory")],
-    output: OutputPath = None,
-    model: Model = None,
-    pairs: Pairs = None,
-    verbose: Verbose = False,
-    quiet: Quiet = False,
+    output: Annotated[Optional[Path], typer.Option("--output", "-o")] = None,
+    pairs: Annotated[Optional[int], typer.Option("--pairs", "-p")] = None,
 ) -> None:
     """Generate Q&A pairs from scraped content."""
-    setup_logging(verbose, quiet)
+    setup_logging()
 
     if not input_path.exists():
         console.print(f"[red]Error:[/red] Input path does not exist: {input_path}")
         raise typer.Exit(1)
 
     output_path = output or Path.cwd() / "dataset.jsonl"
-
-    # Load configuration
     config = Config.load()
 
-    # Override model if specified
-    if model:
-        config.openai.model = model
-
-    # Check API key
     missing_keys = config.validate_api_keys()
     if "OPENAI_API_KEY" in missing_keys:
         console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
-        console.print("Set it in your .env file or as an environment variable.")
         raise typer.Exit(1)
 
-    # Load scraped content
     pages = load_scraped_content(input_path)
 
     if not pages:
-        console.print("[red]Error:[/red] No scraped content found in input directory.")
+        console.print("[red]Error:[/red] No scraped content found.")
         raise typer.Exit(1)
 
-    console.print(f"Loaded {len(pages)} pages from {input_path}")
+    console.print(f"Loaded {len(pages)} pages")
 
-    # Generate Q&A pairs
     generator = Generator(config)
 
     try:
-        result = generator.generate(
-            pages,
-            max_pairs=pairs,
-            verbose=verbose,
-        )
+        result = generator.generate(pages, max_pairs=pairs)
 
         if not result.pairs:
-            console.print("[yellow]Warning:[/yellow] No Q&A pairs were generated.")
+            console.print("[yellow]Warning:[/yellow] No Q&A pairs generated.")
             raise typer.Exit(1)
 
-        # Clean and split the dataset
         cleaner = Cleaner(config)
         cleaned = cleaner.clean_and_split(result.pairs)
 
-        # Save output
         if output_path.suffix == ".jsonl":
             cleaned.save_combined(output_path)
         else:
-            # Save as split files
             output_path.mkdir(parents=True, exist_ok=True)
             cleaned.save(output_path)
 
-        # Show summary
         table = Table(title="Generation Complete")
         table.add_column("Metric", style="cyan")
         table.add_column("Value", style="green")
-        table.add_row("Pages Processed", str(result.pages_processed))
         table.add_row("Total Generated", str(result.total_generated))
         table.add_row("After Cleaning", str(cleaned.cleaned_count))
-        table.add_row("Train Set", str(len(cleaned.train.pairs)))
-        table.add_row("Validation Set", str(len(cleaned.validation.pairs)))
-        table.add_row("Test Set", str(len(cleaned.test.pairs)))
         table.add_row("Output", str(output_path))
-
         console.print(table)
-
-        if result.errors:
-            console.print(f"\n[yellow]Warnings:[/yellow] {len(result.errors)} errors during generation")
-
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
-
-
-@app.command()
-def pipeline(
-    url: Annotated[str, typer.Argument(help="Documentation URL to process")],
-    output: OutputPath = None,
-    depth: Depth = 3,
-    model: Model = None,
-    pairs: Pairs = None,
-    verbose: Verbose = False,
-    quiet: Quiet = False,
-) -> None:
-    """Run full pipeline: scrape + generate in one command."""
-    setup_logging(verbose, quiet)
-
-    output_path = output or Path.cwd() / "dataset.jsonl"
-
-    # Load configuration
-    config = Config.load()
-
-    # Override model if specified
-    if model:
-        config.openai.model = model
-
-    # Check API keys
-    missing_keys = config.validate_api_keys()
-    if missing_keys:
-        console.print(f"[red]Error:[/red] Missing API keys: {', '.join(missing_keys)}")
-        console.print("Set them in your .env file or as environment variables.")
-        raise typer.Exit(1)
-
-    try:
-        # Step 1: Scrape
-        console.print(Panel("[bold blue]Step 1/3: Scraping Documentation[/bold blue]"))
-        scraper = Scraper(config)
-        scrape_result = scraper.scrape(url, depth=depth, verbose=verbose)
-
-        if not scrape_result.pages:
-            console.print("[red]Error:[/red] No pages were scraped.")
-            raise typer.Exit(1)
-
-        console.print(f"[green]Scraped {len(scrape_result.pages)} pages[/green]\n")
-
-        # Step 2: Generate
-        console.print(Panel("[bold blue]Step 2/3: Generating Q&A Pairs[/bold blue]"))
-        generator = Generator(config)
-
-        # Convert ScrapedPage to format expected by generator
-        gen_result = generator.generate(
-            scrape_result.pages,
-            max_pairs=pairs,
-            verbose=verbose,
-        )
-
-        if not gen_result.pairs:
-            console.print("[red]Error:[/red] No Q&A pairs were generated.")
-            raise typer.Exit(1)
-
-        console.print(f"[green]Generated {gen_result.total_generated} Q&A pairs[/green]\n")
-
-        # Step 3: Clean and save
-        console.print(Panel("[bold blue]Step 3/3: Cleaning and Saving Dataset[/bold blue]"))
-        cleaner = Cleaner(config)
-        cleaned = cleaner.clean_and_split(gen_result.pairs)
-
-        # Save output
-        if output_path.suffix == ".jsonl":
-            cleaned.save_combined(output_path)
-        else:
-            output_path.mkdir(parents=True, exist_ok=True)
-            cleaned.save(output_path)
-
-        # Final summary
-        table = Table(title="Pipeline Complete")
-        table.add_column("Step", style="cyan")
-        table.add_column("Result", style="green")
-        table.add_row("Pages Scraped", str(len(scrape_result.pages)))
-        table.add_row("Pairs Generated", str(gen_result.total_generated))
-        table.add_row("Final Dataset Size", str(cleaned.cleaned_count))
-        table.add_row("Train / Val / Test", f"{len(cleaned.train.pairs)} / {len(cleaned.validation.pairs)} / {len(cleaned.test.pairs)}")
-        table.add_row("Output", str(output_path))
-
-        console.print(table)
-
-        console.print(Panel(
-            f"[green]Dataset saved to {output_path}[/green]\n\n"
-            "Your dataset is ready for fine-tuning!",
-            title="Success",
-        ))
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

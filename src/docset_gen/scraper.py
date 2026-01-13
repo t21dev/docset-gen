@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from firecrawl import FirecrawlApp
+from firecrawl import Firecrawl
 from pydantic import BaseModel, Field
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
@@ -84,7 +84,7 @@ class Scraper:
             config: Application configuration.
         """
         self.config = config
-        self.app = FirecrawlApp(api_key=config.firecrawl.api_key)
+        self.app = Firecrawl(api_key=config.firecrawl.api_key)
 
     def scrape(
         self,
@@ -116,35 +116,38 @@ class Scraper:
             task = progress.add_task(f"Crawling {url}...", total=None)
 
             try:
-                # Use Firecrawl's crawl endpoint
-                crawl_result = self.app.crawl_url(
+                # Use Firecrawl's crawl method (v2 API)
+                crawl_result = self.app.crawl(
                     url,
-                    params={
-                        "limit": 100,  # Max pages to crawl
-                        "maxDepth": depth,
-                        "excludePaths": self.config.firecrawl.exclude_patterns,
-                        "includePaths": self.config.firecrawl.include_patterns or None,
-                        "scrapeOptions": {
-                            "formats": ["markdown"],
-                            "onlyMainContent": True,
-                        },
+                    limit=100,
+                    max_depth=depth,
+                    exclude_paths=self.config.firecrawl.exclude_patterns,
+                    include_paths=self.config.firecrawl.include_patterns or None,
+                    scrape_options={
+                        "formats": ["markdown"],
+                        "onlyMainContent": True,
                     },
                     poll_interval=5,
                 )
 
                 progress.update(task, description="Processing results...")
 
-                # Process crawl results
-                if crawl_result and "data" in crawl_result:
-                    for page_data in crawl_result["data"]:
-                        page = self._process_page(page_data)
-                        if page and page.markdown.strip():
-                            result.pages.append(page)
+                # Process crawl results - v2 API returns data directly or in 'data' key
+                pages_data = []
+                if isinstance(crawl_result, dict):
+                    pages_data = crawl_result.get("data", [])
+                elif hasattr(crawl_result, "data"):
+                    pages_data = crawl_result.data or []
 
-                    result.total_pages = len(crawl_result["data"])
+                for page_data in pages_data:
+                    page = self._process_page(page_data)
+                    if page and page.markdown.strip():
+                        result.pages.append(page)
 
-                    if verbose:
-                        logger.info(f"Crawled {result.total_pages} pages")
+                result.total_pages = len(pages_data)
+
+                if verbose:
+                    logger.info(f"Crawled {result.total_pages} pages")
 
             except Exception as e:
                 logger.error(f"Crawl failed: {e}")
@@ -158,7 +161,7 @@ class Scraper:
 
         return result
 
-    def _process_page(self, page_data: dict[str, Any]) -> ScrapedPage | None:
+    def _process_page(self, page_data: dict[str, Any] | Any) -> ScrapedPage | None:
         """Process raw page data from Firecrawl.
 
         Args:
@@ -168,9 +171,18 @@ class Scraper:
             ScrapedPage or None if page should be skipped.
         """
         try:
-            url = page_data.get("metadata", {}).get("sourceURL", "")
-            title = page_data.get("metadata", {}).get("title", "")
-            markdown = page_data.get("markdown", "")
+            # Handle both dict and object responses
+            if isinstance(page_data, dict):
+                metadata = page_data.get("metadata", {})
+                url = metadata.get("sourceURL", "") or metadata.get("url", "")
+                title = metadata.get("title", "")
+                markdown = page_data.get("markdown", "")
+            else:
+                # Object-style response
+                metadata = getattr(page_data, "metadata", {}) or {}
+                url = metadata.get("sourceURL", "") or metadata.get("url", "") or getattr(page_data, "url", "")
+                title = metadata.get("title", "") or getattr(page_data, "title", "")
+                markdown = getattr(page_data, "markdown", "") or ""
 
             # Skip pages with too little content
             if len(markdown) < self.config.generation.min_content_length:
@@ -181,7 +193,7 @@ class Scraper:
                 url=url,
                 title=title,
                 markdown=markdown,
-                metadata=page_data.get("metadata", {}),
+                metadata=metadata if isinstance(metadata, dict) else {},
             )
 
         except Exception as e:

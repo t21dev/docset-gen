@@ -8,6 +8,7 @@ DocSet Gen scrapes documentation websites and generates high-quality Q&A trainin
 
 - **Smart Scraping** - Uses Firecrawl to handle JS-rendered sites, anti-bot measures, and content cleaning
 - **AI-Powered Generation** - Generates Q&A pairs using GPT-4o/GPT-4o-mini
+- **Interactive CLI** - Guided prompts walk you through the process
 - **Quality Controls** - Automatic deduplication, validation, and filtering
 - **Ready-to-Use Output** - JSONL format with automatic train/val/test splits
 
@@ -44,49 +45,68 @@ FIRECRAWL_API_KEY=fc-your-key-here
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-3. (Optional) Create a config file for advanced settings:
-```bash
-python -m docset_gen init
-```
-
 ## Usage
 
-### Quick Start - Full Pipeline
-
+Just run:
 ```bash
-# Generate dataset in one command
-python -m docset_gen pipeline https://docs.example.com --output dataset.jsonl
+python app.py
 ```
 
-### Step-by-Step
+The interactive CLI will guide you:
+```
+ ██████╗  ██████╗  ██████╗███████╗███████╗████████╗
+ ██╔══██╗██╔═══██╗██╔════╝██╔════╝██╔════╝╚══██╔══╝
+ ██║  ██║██║   ██║██║     ███████╗█████╗     ██║
+ ██║  ██║██║   ██║██║     ╚════██║██╔══╝     ██║
+ ██████╔╝╚██████╔╝╚██████╗███████║███████╗   ██║
+ ╚═════╝  ╚═════╝  ╚═════╝╚══════╝╚══════╝   ╚═╝
+  ██████╗ ███████╗███╗   ██╗
+ ██╔════╝ ██╔════╝████╗  ██║
+ ██║  ███╗█████╗  ██╔██╗ ██║
+ ██║   ██║██╔══╝  ██║╚██╗██║
+ ╚██████╔╝███████╗██║ ╚████║
+  ╚═════╝ ╚══════╝╚═╝  ╚═══╝
+                        by t21.dev
+Transform documentation into LLM training datasets
 
-```bash
-# Step 1: Scrape documentation
-python -m docset_gen scrape https://docs.example.com --depth 3 --output ./scraped
+Enter documentation URL: docs.example.com
+Crawl depth [3]: 3
 
-# Step 2: Generate Q&A pairs
-python -m docset_gen generate ./scraped --pairs 500 --output dataset.jsonl
+──────── Step 1/3: Scraping Documentation ────────
+
+Found 45 pages (23,450 words total)
+
+How many Q&A pairs to generate? [225]: 200
+Output file [dataset.jsonl]:
+
+──────── Step 2/3: Generating Q&A Pairs ──────────
+
+Generated 200 Q&A pairs
+
+──────── Step 3/3: Cleaning and Saving ───────────
+
+┌────────────── Dataset Complete ──────────────┐
+│ Pages Scraped       │ 45                     │
+│ Q&A Pairs Generated │ 200                    │
+│ Train / Val / Test  │ 160 / 20 / 20          │
+│ Output              │ dataset.jsonl          │
+└──────────────────────────────────────────────┘
 ```
 
-### Commands
+### Manual Commands
 
-| Command | Description |
-|---------|-------------|
-| `init` | Create config file with defaults |
-| `scrape` | Scrape documentation site to markdown |
-| `generate` | Generate Q&A pairs from scraped content |
-| `pipeline` | Run full scrape + generate workflow |
+You can also run individual steps:
 
-### Options
+```bash
+# Just scrape (save for later)
+python app.py scrape https://docs.example.com --output ./scraped
 
-| Flag | Description |
-|------|-------------|
-| `--output, -o` | Output directory/file |
-| `--depth` | Crawl depth (default: 3) |
-| `--model` | OpenAI model to use |
-| `--pairs` | Number of Q&A pairs to generate |
-| `--verbose, -v` | Verbose output |
-| `--quiet, -q` | Minimal output |
+# Generate from previously scraped content
+python app.py generate ./scraped --pairs 500 --output dataset.jsonl
+
+# Create config file
+python app.py init
+```
 
 ## Output Format
 
@@ -95,7 +115,7 @@ python -m docset_gen generate ./scraped --pairs 500 --output dataset.jsonl
 {"instruction": "How do I configure logging?", "input": "", "output": "To configure logging..."}
 ```
 
-## Configuration File
+## Configuration File (Optional)
 
 Create `docset-gen.yaml` for advanced settings:
 
