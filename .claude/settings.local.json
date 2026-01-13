@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:docs.firecrawl.dev)",
+      "Bash(venv/Scripts/python.exe:*)"
     ]
   }
 }

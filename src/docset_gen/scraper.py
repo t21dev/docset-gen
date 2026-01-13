@@ -117,16 +117,12 @@ class Scraper:
 
             try:
                 # Use Firecrawl's crawl method (v2 API)
-                crawl_result = self.app.crawl(
+                crawl_result = self.app.v2.crawl(
                     url,
                     limit=100,
-                    max_depth=depth,
-                    exclude_paths=self.config.firecrawl.exclude_patterns,
+                    max_discovery_depth=depth,
+                    exclude_paths=self.config.firecrawl.exclude_patterns or None,
                     include_paths=self.config.firecrawl.include_patterns or None,
-                    scrape_options={
-                        "formats": ["markdown"],
-                        "onlyMainContent": True,
-                    },
                     poll_interval=5,
                 )
 
