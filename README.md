@@ -146,6 +146,18 @@ output:
 - [Firecrawl API key](https://firecrawl.dev)
 - [OpenAI API key](https://platform.openai.com)
 
+## Fine-tune with LoCLI
+
+This tool pairs perfectly with [LoCLI](https://github.com/t21dev/lo-cli) - a CLI tool that makes fine-tuning LLMs accessible to developers. Just point it at your dataset and go.
+
+```bash
+# Generate dataset with DocSet Gen
+python app.py
+
+# Fine-tune with LoCLI
+lo-cli train --dataset dataset.jsonl
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE)
