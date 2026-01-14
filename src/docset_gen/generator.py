@@ -108,6 +108,11 @@ Requirements:
         mode = mode or self.config.generation.mode
         pairs_per_page = pairs_per_page or self.config.generation.pairs_per_page
 
+        # If max_pairs requires more pairs per page, adjust dynamically
+        if max_pairs and len(pages) > 0:
+            needed_per_page = (max_pairs + len(pages) - 1) // len(pages)  # Ceiling division
+            pairs_per_page = max(pairs_per_page, min(needed_per_page, 20))  # Cap at 20 per page
+
         result = GenerationResult()
 
         with Progress(
