@@ -195,15 +195,27 @@ Example format:
 Return ONLY the JSON array, no other text."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.config.openai.model,
-                messages=[
+            # Reasoning models (o1, o3, o4) and gpt-5.x require max_completion_tokens
+            # Older models (gpt-3.5, gpt-4, gpt-4o, gpt-4-turbo) use max_tokens
+            model_name = self.config.openai.model
+            model_lower = model_name.lower()
+            use_new_param = any(x in model_lower for x in ["o1", "o3", "o4", "gpt-5", "gpt-4.1"])
+
+            api_params = {
+                "model": model_name,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=self.config.openai.temperature,
-                max_tokens=self.config.openai.max_tokens,
-            )
+                "temperature": self.config.openai.temperature,
+            }
+
+            if use_new_param:
+                api_params["max_completion_tokens"] = self.config.openai.max_tokens
+            else:
+                api_params["max_tokens"] = self.config.openai.max_tokens
+
+            response = self.client.chat.completions.create(**api_params)
 
             content = response.choices[0].message.content
             if not content:

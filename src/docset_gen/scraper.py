@@ -174,11 +174,17 @@ class Scraper:
                 title = metadata.get("title", "")
                 markdown = page_data.get("markdown", "")
             else:
-                # Object-style response
-                metadata = getattr(page_data, "metadata", {}) or {}
-                url = metadata.get("sourceURL", "") or metadata.get("url", "") or getattr(page_data, "url", "")
-                title = metadata.get("title", "") or getattr(page_data, "title", "")
+                # Object-style response (v2 API returns Document objects)
                 markdown = getattr(page_data, "markdown", "") or ""
+                metadata_obj = getattr(page_data, "metadata", None)
+
+                if metadata_obj:
+                    # DocumentMetadata is an object with attributes, not a dict
+                    url = getattr(metadata_obj, "source_url", None) or getattr(metadata_obj, "sourceURL", None) or getattr(metadata_obj, "url", None) or ""
+                    title = getattr(metadata_obj, "title", None) or ""
+                else:
+                    url = getattr(page_data, "url", "") or ""
+                    title = ""
 
             # Skip pages with too little content
             if len(markdown) < self.config.generation.min_content_length:
@@ -189,7 +195,7 @@ class Scraper:
                 url=url,
                 title=title,
                 markdown=markdown,
-                metadata=metadata if isinstance(metadata, dict) else {},
+                metadata={},
             )
 
         except Exception as e:

@@ -45,6 +45,8 @@ FIRECRAWL_API_KEY=fc-your-key-here
 OPENAI_API_KEY=sk-your-key-here
 ```
 
+> **Note:** The default model is `gpt-5.1`. Make sure you have access to this model enabled in your [OpenAI developer account](https://platform.openai.com/settings/organization/limits). You can change the model in `.env` by setting `OPENAI_MODEL=gpt-4o` or another supported model.
+
 ## Usage
 
 Just run:

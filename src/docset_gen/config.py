@@ -20,7 +20,7 @@ class FirecrawlConfig(BaseModel):
     """Firecrawl API configuration."""
 
     api_key: str = Field(default_factory=lambda: os.getenv("FIRECRAWL_API_KEY", ""))
-    max_depth: int = Field(default=3, ge=1, le=10)
+    max_depth: int = Field(default=5, ge=1, le=10)
     exclude_patterns: list[str] = Field(default_factory=lambda: ["/api/*", "/changelog/*", "/blog/*"])
     include_patterns: list[str] = Field(default_factory=list)
     timeout: int = Field(default=30000, ge=1000, le=120000)
@@ -39,7 +39,7 @@ class OpenAIConfig(BaseModel):
     """OpenAI API configuration."""
 
     api_key: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    model: str = Field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    model: str = Field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-5.1"))
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=2048, ge=100, le=16000)
 
