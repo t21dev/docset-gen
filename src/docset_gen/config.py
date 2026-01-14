@@ -20,7 +20,7 @@ class FirecrawlConfig(BaseModel):
     """Firecrawl API configuration."""
 
     api_key: str = Field(default_factory=lambda: os.getenv("FIRECRAWL_API_KEY", ""))
-    max_depth: int = Field(default=5, ge=1, le=10)
+    max_depth: int = Field(default=3, ge=1, le=5)
     exclude_patterns: list[str] = Field(default_factory=lambda: ["/api/*", "/changelog/*", "/blog/*"])
     include_patterns: list[str] = Field(default_factory=list)
     timeout: int = Field(default=30000, ge=1000, le=120000)

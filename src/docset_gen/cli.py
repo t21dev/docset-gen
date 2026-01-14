@@ -106,33 +106,58 @@ def run_interactive() -> None:
         console.print("  OPENAI_API_KEY=sk-your-key")
         raise typer.Exit(1)
 
-    # Step 1: Get URL
-    console.print()
-    url = Prompt.ask("[cyan]Enter documentation URL[/cyan]")
+    # Main loop
+    while True:
+        success = _run_pipeline(config)
 
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url
+        # Ask to continue
+        console.print()
+        choice = Prompt.ask(
+            "[cyan]What would you like to do?[/cyan]",
+            choices=["new", "exit"],
+            default="exit",
+        )
 
-    # Step 2: Get crawl depth
-    depth = IntPrompt.ask(
-        "[cyan]Crawl depth[/cyan]",
-        default=3,
-        show_default=True,
-    )
+        if choice == "exit":
+            console.print("\n[dim]Goodbye![/dim]")
+            break
+        else:
+            console.print("\n" + "─" * 50 + "\n")
 
-    # Step 3: Scrape
-    console.print()
-    console.print(Panel("[bold blue]Step 1/3: Scraping Documentation[/bold blue]"))
 
-    scraper = Scraper(config)
+def _run_pipeline(config: Config) -> bool:
+    """Run the scrape and generate pipeline.
 
+    Returns:
+        True if successful, False otherwise.
+    """
     try:
+        # Step 1: Get URL
+        console.print()
+        url = Prompt.ask("[cyan]Enter documentation URL[/cyan]")
+
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+
+        # Step 2: Get crawl depth
+        depth = IntPrompt.ask(
+            "[cyan]Crawl depth (max 5)[/cyan]",
+            default=3,
+            show_default=True,
+        )
+
+        # Step 3: Scrape
+        console.print()
+        console.print(Panel("[bold blue]Step 1/3: Scraping Documentation[/bold blue]"))
+
+        scraper = Scraper(config)
+
         with console.status(f"[bold]Crawling {url}...[/bold]"):
             scrape_result = scraper.scrape(url, depth=depth)
 
         if not scrape_result.pages:
             console.print("[red]Error:[/red] No pages were scraped.")
-            raise typer.Exit(1)
+            return False
 
         # Show what we found
         total_words = sum(p.word_count() for p in scrape_result.pages)
@@ -167,7 +192,7 @@ def run_interactive() -> None:
 
         if not gen_result.pairs:
             console.print("[red]Error:[/red] No Q&A pairs were generated.")
-            raise typer.Exit(1)
+            return False
 
         console.print(f"[green]Generated {gen_result.total_generated} Q&A pairs[/green]")
 
@@ -201,13 +226,14 @@ def run_interactive() -> None:
             "Your dataset is ready for fine-tuning!",
             title="Success",
         ))
+        return True
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelled by user[/yellow]")
-        raise typer.Exit(0)
+        return False
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
+        return False
 
 
 @app.command()
