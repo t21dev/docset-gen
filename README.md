@@ -1,5 +1,9 @@
 # DocSet Gen
 
+<p align="center">
+  <img src="docset.png" alt="DocSet Gen Banner" width="800"/>
+</p>
+
 > Transform documentation into LLM training datasets
 
 DocSet Gen scrapes documentation websites and generates high-quality Q&A training datasets for fine-tuning LLMs.
