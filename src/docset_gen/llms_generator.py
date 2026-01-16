@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Literal
 
 from openai import OpenAI
 from pydantic import BaseModel, Field
@@ -14,6 +15,9 @@ from .scraper import ScrapedPage
 
 logger = logging.getLogger(__name__)
 
+# Type alias for llms.txt generation mode
+LLMsTxtMode = Literal["minimal", "full"]
+
 
 class LLMsTxtLink(BaseModel):
     """A single link entry in llms.txt."""
@@ -21,6 +25,7 @@ class LLMsTxtLink(BaseModel):
     title: str
     url: str
     description: str = ""
+    content: str = ""  # Full page content (used in full mode)
 
 
 class LLMsTxtSection(BaseModel):
@@ -37,6 +42,7 @@ class LLMsTxtResult(BaseModel):
     project_name: str
     summary: str = ""
     sections: list[LLMsTxtSection] = Field(default_factory=list)
+    mode: LLMsTxtMode = "minimal"
 
     def to_markdown(self) -> str:
         """Render the result as llms.txt markdown format.
@@ -59,11 +65,26 @@ class LLMsTxtResult(BaseModel):
         for section in self.sections:
             lines.append(f"## {section.name}")
             lines.append("")
-            for link in section.links:
-                if link.description:
-                    lines.append(f"- [{link.title}]({link.url}): {link.description}")
-                else:
-                    lines.append(f"- [{link.title}]({link.url})")
+
+            if self.mode == "minimal":
+                # Minimal mode: just links with descriptions
+                for link in section.links:
+                    if link.description:
+                        lines.append(f"- [{link.title}]({link.url}): {link.description}")
+                    else:
+                        lines.append(f"- [{link.title}]({link.url})")
+            else:
+                # Full mode: include full content for each page
+                for link in section.links:
+                    lines.append(f"### [{link.title}]({link.url})")
+                    lines.append("")
+                    if link.description:
+                        lines.append(f"> {link.description}")
+                        lines.append("")
+                    if link.content:
+                        lines.append(link.content)
+                        lines.append("")
+
             lines.append("")
 
         return "\n".join(lines)
@@ -147,23 +168,31 @@ Return ONLY the summary text, no quotes or other formatting."""
         self,
         pages: list[ScrapedPage],
         site_name: str,
+        mode: LLMsTxtMode = "minimal",
     ) -> LLMsTxtResult:
         """Generate llms.txt from scraped pages.
 
         Args:
             pages: List of scraped documentation pages.
             site_name: Name of the project/site.
+            mode: Generation mode - "minimal" for links only, "full" for full content.
 
         Returns:
             LLMsTxtResult: Generated llms.txt content.
         """
-        logger.info(f"Generating llms.txt for {site_name} from {len(pages)} pages")
+        logger.info(f"Generating llms.txt ({mode} mode) for {site_name} from {len(pages)} pages")
+
+        # Build URL to page content mapping for full mode
+        page_content_map: dict[str, str] = {}
+        if mode == "full":
+            for page in pages:
+                page_content_map[page.url] = page.markdown
 
         # Generate summary
         summary = self._generate_summary(pages, site_name)
 
         # Categorize pages into sections
-        sections = self._categorize_pages(pages)
+        sections = self._categorize_pages(pages, page_content_map if mode == "full" else None)
 
         # Apply max_links_per_section limit
         max_links = self.config.llms_txt.max_links_per_section
@@ -179,6 +208,7 @@ Return ONLY the summary text, no quotes or other formatting."""
             project_name=site_name,
             summary=summary,
             sections=sections,
+            mode=mode,
         )
 
         logger.info(
@@ -216,11 +246,16 @@ Return ONLY the summary text, no quotes or other formatting."""
             logger.warning(f"Failed to generate summary: {e}")
             return ""
 
-    def _categorize_pages(self, pages: list[ScrapedPage]) -> list[LLMsTxtSection]:
+    def _categorize_pages(
+        self,
+        pages: list[ScrapedPage],
+        content_map: dict[str, str] | None = None,
+    ) -> list[LLMsTxtSection]:
         """Categorize pages into logical sections.
 
         Args:
             pages: List of scraped pages.
+            content_map: Optional URL to content mapping for full mode.
 
         Returns:
             List of categorized sections.
@@ -235,18 +270,23 @@ Return ONLY the summary text, no quotes or other formatting."""
 
         try:
             response = self._call_openai(prompt, max_tokens=4096)
-            categories = self._parse_categorization_response(response)
+            categories = self._parse_categorization_response(response, content_map)
             return categories
         except Exception as e:
             logger.warning(f"Failed to categorize pages: {e}")
             # Fallback: put all pages in a single "Docs" section
-            return self._fallback_categorization(pages)
+            return self._fallback_categorization(pages, content_map)
 
-    def _parse_categorization_response(self, response: str) -> list[LLMsTxtSection]:
+    def _parse_categorization_response(
+        self,
+        response: str,
+        content_map: dict[str, str] | None = None,
+    ) -> list[LLMsTxtSection]:
         """Parse the categorization response from OpenAI.
 
         Args:
             response: JSON response string.
+            content_map: Optional URL to content mapping for full mode.
 
         Returns:
             List of LLMsTxtSection objects.
@@ -281,11 +321,14 @@ Return ONLY the summary text, no quotes or other formatting."""
         for section_data in data.get("sections", []):
             links = []
             for page_data in section_data.get("pages", []):
+                url = page_data.get("url", "")
+                content = content_map.get(url, "") if content_map else ""
                 links.append(
                     LLMsTxtLink(
                         title=page_data.get("title", "Untitled"),
-                        url=page_data.get("url", ""),
+                        url=url,
                         description=page_data.get("description", ""),
+                        content=content,
                     )
                 )
 
@@ -301,12 +344,15 @@ Return ONLY the summary text, no quotes or other formatting."""
         return sections
 
     def _fallback_categorization(
-        self, pages: list[ScrapedPage]
+        self,
+        pages: list[ScrapedPage],
+        content_map: dict[str, str] | None = None,
     ) -> list[LLMsTxtSection]:
         """Create a simple fallback categorization.
 
         Args:
             pages: List of scraped pages.
+            content_map: Optional URL to content mapping for full mode.
 
         Returns:
             Single "Docs" section with all pages.
@@ -316,6 +362,7 @@ Return ONLY the summary text, no quotes or other formatting."""
                 title=p.title or "Untitled",
                 url=p.url,
                 description="",
+                content=content_map.get(p.url, "") if content_map else "",
             )
             for p in pages
         ]

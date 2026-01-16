@@ -185,20 +185,30 @@ def _run_pipeline(config: Config) -> bool:
                 show_default=True,
             )
 
+            # Ask for mode
+            llms_mode = Prompt.ask(
+                "[cyan]llms.txt mode[/cyan]",
+                choices=["minimal", "full"],
+                default="minimal",
+            )
+
+            # Set default filename based on mode
+            default_filename = "llms-full.txt" if llms_mode == "full" else "llms.txt"
             llms_output = Prompt.ask(
                 "[cyan]llms.txt output file[/cyan]",
-                default="llms.txt",
+                default=default_filename,
                 show_default=True,
             )
             llms_output_path = Path(llms_output)
 
             console.print()
-            console.print(Panel("[bold blue]Generating llms.txt[/bold blue]"))
+            mode_label = "full" if llms_mode == "full" else "minimal"
+            console.print(Panel(f"[bold blue]Generating llms.txt ({mode_label} mode)[/bold blue]"))
 
             llms_gen = LLMsTxtGenerator(config)
 
             with console.status("[bold]Analyzing and categorizing pages...[/bold]"):
-                llms_result = llms_gen.generate(scrape_result.pages, site_name=site_name)
+                llms_result = llms_gen.generate(scrape_result.pages, site_name=site_name, mode=llms_mode)
 
             llms_result.save(llms_output_path)
 
@@ -210,6 +220,7 @@ def _run_pipeline(config: Config) -> bool:
             table.add_row("Pages Analyzed", str(len(scrape_result.pages)))
             table.add_row("Sections Generated", str(len(llms_result.sections)))
             table.add_row("Total Links", str(llms_result.total_links))
+            table.add_row("Mode", llms_mode)
             table.add_row("Output", str(llms_output_path))
             console.print(table)
 
@@ -424,11 +435,27 @@ def llms_txt(
     output: Annotated[Optional[Path], typer.Option("--output", "-o")] = None,
     depth: Annotated[int, typer.Option("--depth", "-d")] = 3,
     name: Annotated[Optional[str], typer.Option("--name", "-n", help="Project/site name")] = None,
+    mode: Annotated[str, typer.Option("--mode", "-m", help="Generation mode: minimal (links only) or full (with content)")] = "minimal",
 ) -> None:
-    """Generate llms.txt from documentation site."""
+    """Generate llms.txt from documentation site.
+
+    Modes:
+      minimal - Links with brief descriptions (default)
+      full    - Full page content included
+    """
     setup_logging()
 
-    output_path = output or Path.cwd() / "llms.txt"
+    # Validate mode
+    if mode not in ("minimal", "full"):
+        console.print(f"[red]Error:[/red] Invalid mode '{mode}'. Use 'minimal' or 'full'.")
+        raise typer.Exit(1)
+
+    # Set default output based on mode
+    if output is None:
+        output_path = Path.cwd() / ("llms-full.txt" if mode == "full" else "llms.txt")
+    else:
+        output_path = output
+
     config = Config.load()
 
     # Validate API keys
@@ -466,8 +493,8 @@ def llms_txt(
         # Generate llms.txt
         llms_gen = LLMsTxtGenerator(config)
 
-        with console.status("[bold]Generating llms.txt...[/bold]"):
-            result = llms_gen.generate(scrape_result.pages, site_name=name)
+        with console.status(f"[bold]Generating llms.txt ({mode} mode)...[/bold]"):
+            result = llms_gen.generate(scrape_result.pages, site_name=name, mode=mode)
 
         result.save(output_path)
 
@@ -477,6 +504,7 @@ def llms_txt(
         table.add_row("Pages Analyzed", str(len(scrape_result.pages)))
         table.add_row("Sections Generated", str(len(result.sections)))
         table.add_row("Total Links", str(result.total_links))
+        table.add_row("Mode", mode)
         table.add_row("Output", str(output_path))
         console.print(table)
 

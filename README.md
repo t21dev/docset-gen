@@ -124,9 +124,16 @@ python app.py init
 
 Generate [llms.txt](https://llmstxt.org/) files - a proposed standard to help LLMs understand your documentation structure.
 
+**Two modes available:**
+- **minimal** (default) - Links with brief descriptions
+- **full** - Complete page content included (llms-full.txt)
+
 ```bash
-# Generate llms.txt from a documentation site
+# Generate minimal llms.txt (links only)
 python app.py llms-txt https://docs.example.com
+
+# Generate full llms.txt with complete content
+python app.py llms-txt https://docs.example.com --mode full
 
 # Specify project name and output file
 python app.py llms-txt https://docs.example.com --name "My Project" --output my-llms.txt
@@ -134,7 +141,7 @@ python app.py llms-txt https://docs.example.com --name "My Project" --output my-
 
 Or choose `llms.txt` or `both` when prompted for output format in interactive mode.
 
-Example output:
+**Minimal mode output:**
 ```markdown
 # Example Project
 
@@ -147,10 +154,31 @@ Example output:
 ## API Reference
 - [Authentication](https://example.com/api/auth): Auth endpoints
 - [Users](https://example.com/api/users): User management
+```
 
-## Optional
-- [Changelog](https://example.com/changelog)
-- [Contributing](https://example.com/contributing)
+**Full mode output:**
+```markdown
+# Example Project
+
+> A comprehensive toolkit for building modern web applications.
+
+## Docs
+
+### [Getting Started](https://example.com/docs/getting-started)
+
+> Quick start guide
+
+# Getting Started
+
+Welcome to the project! This guide will help you get up and running...
+
+### [Configuration](https://example.com/docs/config)
+
+> Configuration options
+
+# Configuration
+
+The following configuration options are available...
 ```
 
 ## Output Format

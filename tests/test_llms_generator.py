@@ -38,6 +38,17 @@ class TestLLMsTxtLink:
         assert link.title == "Home"
         assert link.description == ""
 
+    def test_link_with_content(self):
+        """Test creating a link with full content (for full mode)."""
+        link = LLMsTxtLink(
+            title="Getting Started",
+            url="https://example.com/docs/start",
+            description="Quick start guide",
+            content="# Getting Started\n\nThis is the full content of the page.",
+        )
+        assert link.title == "Getting Started"
+        assert link.content == "# Getting Started\n\nThis is the full content of the page."
+
 
 class TestLLMsTxtSection:
     """Tests for LLMsTxtSection model."""
@@ -151,6 +162,73 @@ class TestLLMsTxtResult:
         assert "# Test Project" in markdown
         assert ">" not in markdown
 
+    def test_to_markdown_full_mode(self):
+        """Test markdown rendering in full mode with content."""
+        result = LLMsTxtResult(
+            project_name="Test Project",
+            summary="A test project.",
+            mode="full",
+            sections=[
+                LLMsTxtSection(
+                    name="Docs",
+                    links=[
+                        LLMsTxtLink(
+                            title="Getting Started",
+                            url="https://example.com/docs/start",
+                            description="Quick start guide",
+                            content="# Getting Started\n\nWelcome to the guide!",
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        markdown = result.to_markdown()
+
+        # Check H1 heading
+        assert "# Test Project" in markdown
+
+        # Check section heading
+        assert "## Docs" in markdown
+
+        # Check H3 link heading (full mode uses ### for links)
+        assert "### [Getting Started](https://example.com/docs/start)" in markdown
+
+        # Check description blockquote
+        assert "> Quick start guide" in markdown
+
+        # Check full content is included
+        assert "# Getting Started" in markdown
+        assert "Welcome to the guide!" in markdown
+
+    def test_to_markdown_minimal_mode(self):
+        """Test markdown rendering in minimal mode (default)."""
+        result = LLMsTxtResult(
+            project_name="Test Project",
+            mode="minimal",
+            sections=[
+                LLMsTxtSection(
+                    name="Docs",
+                    links=[
+                        LLMsTxtLink(
+                            title="Getting Started",
+                            url="https://example.com/docs/start",
+                            description="Quick start guide",
+                            content="Full content here",  # Should be ignored in minimal mode
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        markdown = result.to_markdown()
+
+        # Check minimal format (list item, not H3)
+        assert "- [Getting Started](https://example.com/docs/start): Quick start guide" in markdown
+
+        # Content should not be included
+        assert "Full content here" not in markdown
+
     def test_save(self):
         """Test saving to file."""
         result = LLMsTxtResult(
@@ -243,6 +321,35 @@ class TestLLMsTxtGenerator:
         assert len(sections) == 1
         assert sections[0].name == "Docs"
         assert len(sections[0].links) == 2
+
+    def test_fallback_categorization_with_content_map(self):
+        """Test fallback categorization with content map for full mode."""
+        config = Config()
+        generator = LLMsTxtGenerator(config)
+
+        pages = [
+            ScrapedPage(
+                url="https://example.com/page1",
+                title="Page 1",
+                markdown="Content for page 1",
+            ),
+            ScrapedPage(
+                url="https://example.com/page2",
+                title="Page 2",
+                markdown="Content for page 2",
+            ),
+        ]
+
+        content_map = {
+            "https://example.com/page1": "Content for page 1",
+            "https://example.com/page2": "Content for page 2",
+        }
+
+        sections = generator._fallback_categorization(pages, content_map)
+
+        assert len(sections) == 1
+        assert sections[0].links[0].content == "Content for page 1"
+        assert sections[0].links[1].content == "Content for page 2"
 
     def test_parse_categorization_response_valid(self):
         """Test parsing valid categorization JSON response."""
