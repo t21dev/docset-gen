@@ -79,6 +79,14 @@ class OutputConfig(BaseModel):
         return v
 
 
+class LLMsTxtConfig(BaseModel):
+    """llms.txt generation configuration."""
+
+    include_optional_section: bool = Field(default=True)
+    max_links_per_section: int = Field(default=20, ge=1, le=100)
+    generate_full_version: bool = Field(default=False)
+
+
 class Config(BaseModel):
     """Main configuration model."""
 
@@ -86,6 +94,7 @@ class Config(BaseModel):
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    llms_txt: LLMsTxtConfig = Field(default_factory=LLMsTxtConfig)
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> Config:

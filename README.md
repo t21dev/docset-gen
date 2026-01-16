@@ -12,6 +12,7 @@ DocSet Gen scrapes documentation websites and generates high-quality Q&A trainin
 
 - **Smart Scraping** - Uses Firecrawl to handle JS-rendered sites, anti-bot measures, and content cleaning
 - **AI-Powered Generation** - Generates Q&A pairs using GPT-4o/GPT-4o-mini
+- **llms.txt Generation** - Generate llms.txt files to help LLMs understand your documentation
 - **Interactive CLI** - Guided prompts walk you through the process
 - **Quality Controls** - Automatic deduplication, validation, and filtering
 - **Ready-to-Use Output** - JSONL format with automatic train/val/test splits
@@ -82,6 +83,8 @@ Crawl depth [3]: 3
 
 Found 45 pages (23,450 words total)
 
+Output format? [dataset/llms.txt/both]: dataset
+
 How many Q&A pairs to generate? [225]: 200
 Output file [dataset.jsonl]:
 
@@ -110,8 +113,44 @@ python app.py scrape https://docs.example.com --output ./scraped
 # Generate from previously scraped content
 python app.py generate ./scraped --pairs 500 --output dataset.jsonl
 
+# Generate llms.txt directly
+python app.py llms-txt https://docs.example.com --output llms.txt
+
 # Create config file
 python app.py init
+```
+
+### llms.txt Generation
+
+Generate [llms.txt](https://llmstxt.org/) files - a proposed standard to help LLMs understand your documentation structure.
+
+```bash
+# Generate llms.txt from a documentation site
+python app.py llms-txt https://docs.example.com
+
+# Specify project name and output file
+python app.py llms-txt https://docs.example.com --name "My Project" --output my-llms.txt
+```
+
+Or choose `llms.txt` or `both` when prompted for output format in interactive mode.
+
+Example output:
+```markdown
+# Example Project
+
+> A comprehensive toolkit for building modern web applications.
+
+## Docs
+- [Getting Started](https://example.com/docs/getting-started): Quick start guide
+- [Configuration](https://example.com/docs/config): Configuration options
+
+## API Reference
+- [Authentication](https://example.com/api/auth): Auth endpoints
+- [Users](https://example.com/api/users): User management
+
+## Optional
+- [Changelog](https://example.com/changelog)
+- [Contributing](https://example.com/contributing)
 ```
 
 ## Output Format
@@ -142,6 +181,10 @@ generation:
 
 output:
   split_ratio: [0.8, 0.1, 0.1]
+
+llms_txt:
+  include_optional_section: true
+  max_links_per_section: 20
 ```
 
 ## Requirements

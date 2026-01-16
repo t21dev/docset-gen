@@ -42,3 +42,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+#AI Agents
+.claude/
+.claude/*
+.claude/settings.local.json

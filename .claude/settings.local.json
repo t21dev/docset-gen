@@ -3,7 +3,13 @@
     "allow": [
       "WebSearch",
       "WebFetch(domain:docs.firecrawl.dev)",
-      "Bash(venv/Scripts/python.exe:*)"
+      "Bash(venv/Scripts/python.exe:*)",
+      "WebFetch(domain:llmstxt.org)",
+      "Bash(python -m pytest:*)",
+      "Bash(dir /b:*)",
+      "Bash(./venv/Scripts/python -m pytest tests/test_llms_generator.py -v)",
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(./venv/Scripts/python -m pytest:*)"
     ]
   }
 }

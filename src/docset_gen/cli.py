@@ -18,6 +18,7 @@ from . import __version__
 from .cleaner import Cleaner
 from .config import Config, create_default_config
 from .generator import Generator
+from .llms_generator import LLMsTxtGenerator
 from .scraper import Scraper, load_scraped_content
 
 # Initialize Typer app
@@ -163,69 +164,128 @@ def _run_pipeline(config: Config) -> bool:
         total_words = sum(p.word_count() for p in scrape_result.pages)
         console.print(f"\n[green]Found {len(scrape_result.pages)} pages[/green] ({total_words:,} words total)")
 
-        # Step 4: Ask how many pairs
+        # Step 4: Ask for output format
         console.print()
-        suggested_pairs = min(len(scrape_result.pages) * 5, 500)
-        pairs_count = IntPrompt.ask(
-            "[cyan]How many Q&A pairs to generate?[/cyan]",
-            default=suggested_pairs,
-            show_default=True,
+        format_choice = Prompt.ask(
+            "[cyan]Output format[/cyan]",
+            choices=["dataset", "llms.txt", "both"],
+            default="dataset",
         )
 
-        # Step 5: Get output path
-        output_path = Prompt.ask(
-            "[cyan]Output file[/cyan]",
-            default="dataset.jsonl",
-            show_default=True,
-        )
-        output_path = Path(output_path)
+        # Handle llms.txt generation
+        if format_choice in ["llms.txt", "both"]:
+            # Extract site name from URL
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            default_name = parsed.netloc.replace("www.", "").split(".")[0].title()
 
-        # Step 6: Generate
-        console.print()
-        console.print(Panel("[bold blue]Step 2/3: Generating Q&A Pairs[/bold blue]"))
+            site_name = Prompt.ask(
+                "[cyan]Site/Project name[/cyan]",
+                default=default_name,
+                show_default=True,
+            )
 
-        generator = Generator(config)
-        gen_result = generator.generate(
-            scrape_result.pages,
-            max_pairs=pairs_count,
-        )
+            llms_output = Prompt.ask(
+                "[cyan]llms.txt output file[/cyan]",
+                default="llms.txt",
+                show_default=True,
+            )
+            llms_output_path = Path(llms_output)
 
-        if not gen_result.pairs:
-            console.print("[red]Error:[/red] No Q&A pairs were generated.")
-            return False
+            console.print()
+            console.print(Panel("[bold blue]Generating llms.txt[/bold blue]"))
 
-        console.print(f"[green]Generated {gen_result.total_generated} Q&A pairs[/green]")
+            llms_gen = LLMsTxtGenerator(config)
 
-        # Step 7: Clean and save
-        console.print()
-        console.print(Panel("[bold blue]Step 3/3: Cleaning and Saving[/bold blue]"))
+            with console.status("[bold]Analyzing and categorizing pages...[/bold]"):
+                llms_result = llms_gen.generate(scrape_result.pages, site_name=site_name)
 
-        cleaner = Cleaner(config)
-        cleaned = cleaner.clean_and_split(gen_result.pairs)
+            llms_result.save(llms_output_path)
 
-        if output_path.suffix == ".jsonl":
-            cleaned.save_combined(output_path)
-        else:
-            output_path.mkdir(parents=True, exist_ok=True)
-            cleaned.save(output_path)
+            # Show llms.txt summary
+            console.print()
+            table = Table(title="llms.txt Complete")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Pages Analyzed", str(len(scrape_result.pages)))
+            table.add_row("Sections Generated", str(len(llms_result.sections)))
+            table.add_row("Total Links", str(llms_result.total_links))
+            table.add_row("Output", str(llms_output_path))
+            console.print(table)
 
-        # Final summary
-        console.print()
-        table = Table(title="Dataset Complete")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="green")
-        table.add_row("Pages Scraped", str(len(scrape_result.pages)))
-        table.add_row("Q&A Pairs Generated", str(gen_result.total_generated))
-        table.add_row("After Cleaning", str(cleaned.cleaned_count))
-        table.add_row("Train / Val / Test", f"{len(cleaned.train.pairs)} / {len(cleaned.validation.pairs)} / {len(cleaned.test.pairs)}")
-        table.add_row("Output", str(output_path))
-        console.print(table)
+            if format_choice == "llms.txt":
+                console.print(Panel(
+                    f"[green]llms.txt saved to {llms_output_path}[/green]",
+                    title="Success",
+                ))
+                return True
 
-        console.print(Panel(
-            f"[green]Dataset saved to {output_path}[/green]\n\n"
-            "Your dataset is ready for fine-tuning!",
-            title="Success",
-        ))
+        # Handle dataset generation
+        if format_choice in ["dataset", "both"]:
+            # Step: Ask how many pairs
+            console.print()
+            suggested_pairs = min(len(scrape_result.pages) * 5, 500)
+            pairs_count = IntPrompt.ask(
+                "[cyan]How many Q&A pairs to generate?[/cyan]",
+                default=suggested_pairs,
+                show_default=True,
+            )
+
+            # Step: Get output path
+            output_path = Prompt.ask(
+                "[cyan]Dataset output file[/cyan]",
+                default="dataset.jsonl",
+                show_default=True,
+            )
+            output_path = Path(output_path)
+
+            # Step: Generate
+            console.print()
+            console.print(Panel("[bold blue]Generating Q&A Pairs[/bold blue]"))
+
+            generator = Generator(config)
+            gen_result = generator.generate(
+                scrape_result.pages,
+                max_pairs=pairs_count,
+            )
+
+            if not gen_result.pairs:
+                console.print("[red]Error:[/red] No Q&A pairs were generated.")
+                return False
+
+            console.print(f"[green]Generated {gen_result.total_generated} Q&A pairs[/green]")
+
+            # Step: Clean and save
+            console.print()
+            console.print(Panel("[bold blue]Cleaning and Saving[/bold blue]"))
+
+            cleaner = Cleaner(config)
+            cleaned = cleaner.clean_and_split(gen_result.pairs)
+
+            if output_path.suffix == ".jsonl":
+                cleaned.save_combined(output_path)
+            else:
+                output_path.mkdir(parents=True, exist_ok=True)
+                cleaned.save(output_path)
+
+            # Final summary
+            console.print()
+            table = Table(title="Dataset Complete")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Pages Scraped", str(len(scrape_result.pages)))
+            table.add_row("Q&A Pairs Generated", str(gen_result.total_generated))
+            table.add_row("After Cleaning", str(cleaned.cleaned_count))
+            table.add_row("Train / Val / Test", f"{len(cleaned.train.pairs)} / {len(cleaned.validation.pairs)} / {len(cleaned.test.pairs)}")
+            table.add_row("Output", str(output_path))
+            console.print(table)
+
+            console.print(Panel(
+                f"[green]Dataset saved to {output_path}[/green]\n\n"
+                "Your dataset is ready for fine-tuning!",
+                title="Success",
+            ))
+
         return True
 
     except KeyboardInterrupt:
@@ -350,6 +410,73 @@ def generate(
         table.add_column("Value", style="green")
         table.add_row("Total Generated", str(result.total_generated))
         table.add_row("After Cleaning", str(cleaned.cleaned_count))
+        table.add_row("Output", str(output_path))
+        console.print(table)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("llms-txt")
+def llms_txt(
+    url: Annotated[str, typer.Argument(help="Documentation URL to scrape")],
+    output: Annotated[Optional[Path], typer.Option("--output", "-o")] = None,
+    depth: Annotated[int, typer.Option("--depth", "-d")] = 3,
+    name: Annotated[Optional[str], typer.Option("--name", "-n", help="Project/site name")] = None,
+) -> None:
+    """Generate llms.txt from documentation site."""
+    setup_logging()
+
+    output_path = output or Path.cwd() / "llms.txt"
+    config = Config.load()
+
+    # Validate API keys
+    missing_keys = config.validate_api_keys()
+    if "FIRECRAWL_API_KEY" in missing_keys:
+        console.print("[red]Error:[/red] FIRECRAWL_API_KEY is not set.")
+        raise typer.Exit(1)
+    if "OPENAI_API_KEY" in missing_keys:
+        console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
+        raise typer.Exit(1)
+
+    # Normalize URL
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    # Extract site name from URL if not provided
+    if not name:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        name = parsed.netloc.replace("www.", "").split(".")[0].title()
+
+    # Scrape the site
+    scraper = Scraper(config)
+
+    try:
+        with console.status(f"[bold]Scraping {url}...[/bold]"):
+            scrape_result = scraper.scrape(url, depth=depth)
+
+        if not scrape_result.pages:
+            console.print("[red]Error:[/red] No pages were scraped.")
+            raise typer.Exit(1)
+
+        console.print(f"[green]Scraped {len(scrape_result.pages)} pages[/green]")
+
+        # Generate llms.txt
+        llms_gen = LLMsTxtGenerator(config)
+
+        with console.status("[bold]Generating llms.txt...[/bold]"):
+            result = llms_gen.generate(scrape_result.pages, site_name=name)
+
+        result.save(output_path)
+
+        table = Table(title="llms.txt Complete")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+        table.add_row("Pages Analyzed", str(len(scrape_result.pages)))
+        table.add_row("Sections Generated", str(len(result.sections)))
+        table.add_row("Total Links", str(result.total_links))
         table.add_row("Output", str(output_path))
         console.print(table)
 
