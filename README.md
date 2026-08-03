@@ -25,7 +25,10 @@ git clone https://github.com/t21dev/docset-gen.git
 cd docset-gen
 
 # Create virtual environment
-python -m venv venv
+# Windows (the py launcher avoids picking up an unrelated venv on PATH):
+py -m venv venv
+# macOS/Linux:
+python3 -m venv venv
 
 # Activate virtual environment
 # Windows:
@@ -36,6 +39,8 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 ```
+
+> **Activate before installing.** Every command below assumes the venv is active. If you skip activation, `pip` and `python` may resolve to two different interpreters and nothing will work — see [Troubleshooting](#troubleshooting).
 
 ## Configuration
 
@@ -214,6 +219,48 @@ llms_txt:
   include_optional_section: true
   max_links_per_section: 20
 ```
+
+## Troubleshooting
+
+### `ModuleNotFoundError: No module named 'typer'` (or any other dependency)
+
+Your shell is running a different Python than the one `pip` installed into. This is common on Windows when another tool has put its own venv on your PATH. Check both:
+
+```bash
+# Windows
+where python
+where pip
+
+# macOS/Linux
+which python
+which pip
+```
+
+If the two paths don't point into the same directory, that's the problem — installing with one never affects the other. Activate the project venv and confirm the paths now agree:
+
+```bash
+# Windows
+venv\Scripts\activate
+# macOS/Linux
+source venv/bin/activate
+```
+
+To bypass PATH entirely, call the venv's interpreter directly:
+
+```bash
+# Windows
+venv\Scripts\python.exe app.py
+# macOS/Linux
+venv/bin/python app.py
+```
+
+### `ImportError: cannot import name 'Firecrawl' from 'firecrawl'`
+
+You have `firecrawl-py` 1.x installed, which exposes `FirecrawlApp` instead. This project uses the v2 API. Reinstall with `pip install -r requirements.txt` in an active venv.
+
+### `TypeError: Parameter.make_metavar() missing 1 required positional argument: 'ctx'`
+
+`typer` 0.15.x is incompatible with `click` 8.2+. `requirements.txt` pins `typer>=0.16`; make sure your install picked it up.
 
 ## Requirements
 
