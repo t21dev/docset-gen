@@ -1,9 +1,9 @@
 # DocSet Gen Dependencies
 
 # Core dependencies
-firecrawl-py==1.15.0
+firecrawl-py>=4.0,<5.0  # v2 API: scraper.py imports `Firecrawl`, absent in 1.x
 openai==1.78.1
-typer==0.15.1
+typer>=0.16  # 0.15.x breaks on click>=8.2 (Parameter.make_metavar signature change)
 rich==14.0.0
 pydantic==2.11.4
 pyyaml==6.0.2
